@@ -4,6 +4,7 @@ import {
   getAllProgress,
   getGameProgress,
   getGames,
+  getOverview,
   initializeGame,
   recordAdaptiveResult,
   resetAdaptiveProfile,
@@ -16,6 +17,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 const router = Router();
 
 router.get('/games', asyncHandler(getGames));
+router.get('/overview', asyncHandler(getOverview));
 router.get('/progress', asyncHandler(getAllProgress));
 router.post('/progress/reset', asyncHandler(resetProgress));
 router.post('/progress/reset-all-adaptive', asyncHandler(resetAllAdaptiveProfiles));

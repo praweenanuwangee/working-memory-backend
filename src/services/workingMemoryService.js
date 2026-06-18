@@ -1,4 +1,4 @@
-import { getGameDefinition, WORKING_MEMORY_GAMES } from '../constants/gameRegistry.js';
+import { getGameDefinition, WORKING_MEMORY_GAME_MAP, WORKING_MEMORY_GAMES } from '../constants/gameRegistry.js';
 import { WorkingMemoryProgress } from '../models/WorkingMemoryProgress.js';
 import { createAdaptiveProfile, updateAdaptiveProfile } from './adaptiveDifficultyService.js';
 import { ApiError } from '../utils/ApiError.js';
@@ -201,4 +201,52 @@ export const resetAllAdaptiveProfilesForUser = async (userId) => {
 export const resetAllProgressForUser = async (userId) => {
   await WorkingMemoryProgress.deleteMany({ userId });
   return [];
+};
+
+export const getOverviewForUser = async (userId = null) => {
+  const total = WORKING_MEMORY_GAMES.length;
+  const available = WORKING_MEMORY_GAMES.filter((g) => g.available).length;
+  const adaptive = WORKING_MEMORY_GAMES.filter((g) => g.adaptive && g.available).length;
+
+  const gamesSummary = {
+    total,
+    available,
+    adaptive,
+    locked: total - available,
+  };
+
+  if (!userId) {
+    return { games: gamesSummary, userProgress: null };
+  }
+
+  const documents = await WorkingMemoryProgress.find({ userId }).lean();
+
+  const completedGames = documents.filter((d) => {
+    const game = WORKING_MEMORY_GAME_MAP.get(d.gameId);
+    return game && d.completedLevels && d.completedLevels.length >= game.maxLevels;
+  }).length;
+
+  const inProgressGames = documents.filter((d) => {
+    const game = WORKING_MEMORY_GAME_MAP.get(d.gameId);
+    return game && d.completedLevels && d.completedLevels.length > 0 && d.completedLevels.length < game.maxLevels;
+  }).length;
+
+  const adaptiveTiers = documents.reduce(
+    (acc, d) => {
+      const tier = d.adaptiveProfile?.tier ?? 'balanced';
+      acc[tier] = (acc[tier] || 0) + 1;
+      return acc;
+    },
+    { support: 0, balanced: 0, challenge: 0 },
+  );
+
+  return {
+    games: gamesSummary,
+    userProgress: {
+      completedGames,
+      inProgressGames,
+      notStartedGames: available - completedGames - inProgressGames,
+      adaptiveTiers,
+    },
+  };
 };

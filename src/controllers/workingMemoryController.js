@@ -2,6 +2,7 @@ import {
   completeLevelForGame,
   ensureGameProgress,
   getAllProgressForUser,
+  getOverviewForUser,
   getProgressForGame,
   listGames,
   recordAdaptiveResultForGame,
@@ -28,6 +29,14 @@ export const getGames = async (req, res) => {
   });
 };
 
+export const getOverview = async (req, res) => {
+  // userId is optional — returns user-specific stats when provided
+  const rawUserId = req.query.userId || req.headers['x-user-id'];
+  const userId = rawUserId && typeof rawUserId === 'string' ? rawUserId.trim() || null : null;
+  const data = await getOverviewForUser(userId);
+  res.status(200).json({ success: true, data });
+};
+
 export const initializeGame = async (req, res) => {
   const userId = resolveUserId(req);
   const data = await ensureGameProgress(userId, req.params.gameId);
@@ -49,6 +58,9 @@ export const getGameProgress = async (req, res) => {
 export const updateLevelProgress = async (req, res) => {
   const userId = resolveUserId(req);
   const { level, percent, stats } = req.body;
+  if (!Number.isFinite(Number(percent)) || Number(percent) < 0 || Number(percent) > 100) {
+    throw new ApiError(400, 'percent must be a number between 0 and 100');
+  }
   const data = await updateLevelProgressForGame({ userId, gameId: req.params.gameId, level, percent, stats });
   res.status(200).json({ success: true, data });
 };
@@ -63,7 +75,10 @@ export const completeLevel = async (req, res) => {
 export const recordAdaptiveResult = async (req, res) => {
   const userId = resolveUserId(req);
   const { metrics } = req.body;
-  const data = await recordAdaptiveResultForGame({ userId, gameId: req.params.gameId, metrics });
+  if (metrics !== undefined && (typeof metrics !== 'object' || metrics === null || Array.isArray(metrics))) {
+    throw new ApiError(400, 'metrics must be a plain object');
+  }
+  const data = await recordAdaptiveResultForGame({ userId, gameId: req.params.gameId, metrics: metrics || {} });
   res.status(200).json({ success: true, data });
 };
 
