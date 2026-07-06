@@ -33,6 +33,11 @@ export const createApp = ({ clientUrls = [] }) => {
   app.use(morgan('dev'));
   app.use(express.json({ limit: '1mb' }));
 
+  app.use((req, res, next) => {
+    console.log('Incoming Route:', req.originalUrl);
+    next();
+  });
+
   // Root API
   app.get('/', (req, res) => {
     res.status(200).json({
