@@ -1,6 +1,6 @@
 export const WORKING_MEMORY_GAMES = [
   { gameId: 'sea-odd-one-out', label: 'වෙනස් ඒක සොයමු', maxLevels: 2, adaptive: true, available: true },
-  { gameId: 'image-matcher', label: 'පින්තූර ගළපමු', maxLevels: 3, adaptive: true, available: true },
+  { gameId: 'puzzle-game', label: 'පින්තූර ගළපමු', maxLevels: 3, adaptive: true, available: true },
   { gameId: 'sequence-recall', label: 'පිළිවෙල මතකය', maxLevels: 3, adaptive: true, available: true },
   { gameId: 'n-back', label: 'පෙර තිබුණේ මොකක්ද?', maxLevels: 2, adaptive: true, available: true },
   { gameId: 'color-memory', label: 'මතක අභියෝගය', maxLevels: 3, adaptive: true, available: true },
