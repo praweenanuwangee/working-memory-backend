@@ -12,6 +12,16 @@ import {
   updateLevelProgressForGame,
 } from '../services/workingMemoryService.js';
 import { ApiError } from '../utils/ApiError.js';
+import fs from 'fs';
+import path from 'path';
+import { spawn } from 'child_process';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const mlFolder = path.resolve(__dirname, '../../ml');
+const predictScript = path.join(mlFolder, 'predict.py');
 
 const resolveUserId = (req) => {
   const bodyUserId = req.body && typeof req.body === 'object' ? req.body.userId : undefined;
@@ -98,4 +108,88 @@ export const resetProgress = async (req, res) => {
   const userId = resolveUserId(req);
   const data = await resetAllProgressForUser(userId);
   res.status(200).json({ success: true, data });
+};
+export const predictShape = async (req, res) => {
+  if (!req.file) {
+    throw new ApiError(400, 'Image file is required');
+  }
+
+  const imagePath = req.file.path;
+
+  try {
+    const result = await new Promise((resolve, reject) => {
+      const python = spawn('python', [
+        predictScript,
+        imagePath,
+      ]);
+
+      let output = '';
+      let errorOutput = '';
+
+      python.stdout.on('data', (data) => {
+        output += data.toString();
+      });
+
+      python.stderr.on('data', (data) => {
+        errorOutput += data.toString();
+      });
+
+      python.on('close', (code) => {
+        if (code !== 0) {
+          reject(
+            new Error(
+              `YOLO prediction failed: ${errorOutput}`
+            )
+          );
+          return;
+        }
+
+        try {
+          resolve(JSON.parse(output));
+        } catch (error) {
+          reject(
+            new Error('Invalid YOLO prediction response')
+          );
+        }
+      });
+    });
+
+    const prediction = result[0] || null;
+
+    let confidenceLevel = 'Not Detected';
+
+    if (prediction) {
+      const confidence = prediction.confidence;
+
+      if (confidence < 0.50) {
+        confidenceLevel = 'Not Detected';
+      } else if (confidence < 0.60) {
+        confidenceLevel = 'Low';
+      } else if (confidence < 0.70) {
+        confidenceLevel = 'Medium';
+      } else if (confidence < 0.80) {
+        confidenceLevel = 'Good';
+      } else {
+        confidenceLevel = 'Very Good';
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      data: prediction
+        ? {
+            ...prediction,
+            confidenceLevel,
+          }
+        : {
+            shape: null,
+            confidence: 0,
+            confidenceLevel: 'Not Detected',
+          },
+    });
+  } finally {
+    if (fs.existsSync(imagePath)) {
+      fs.unlinkSync(imagePath);
+    }
+  }
 };

@@ -4,6 +4,7 @@ export const WORKING_MEMORY_GAMES = [
   { gameId: 'sequence-recall', label: 'පිළිවෙල මතකය', maxLevels: 3, adaptive: true, available: true },
   { gameId: 'n-back', label: 'පෙර තිබුණේ මොකක්ද?', maxLevels: 2, adaptive: true, available: true },
   { gameId: 'color-memory', label: 'මතක අභියෝගය', maxLevels: 3, adaptive: true, available: true },
+  { gameId: 'memory-shape-recall', label: 'Memory Shape Recall', maxLevels: 2, adaptive: true, available: true },
   { gameId: 'video-story', label: 'කතාව මතකද?', maxLevels: 1, adaptive: true, available: true },
   { gameId: 'memory-match', label: 'හැඩ මතකය', maxLevels: 5, adaptive: false, available: false },
   { gameId: 'instruction-follow', label: 'අවධානයෙන් බලමු', maxLevels: 5, adaptive: false, available: false },
