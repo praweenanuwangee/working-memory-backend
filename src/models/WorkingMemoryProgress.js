@@ -11,6 +11,21 @@ const recentResultSchema = new mongoose.Schema(
   { _id: false },
 );
 
+// Keep the report data separately from the short adaptive-difficulty window.
+// `recentResults` deliberately contains only the last six results, whereas
+// this collection is the durable, per-game history shown in the report.
+const performanceResultSchema = new mongoose.Schema(
+  {
+    accuracy: { type: Number, default: 0 },
+    mistakes: { type: Number, default: null },
+    attempts: { type: Number, default: null },
+    averageResponseMs: { type: Number, default: null },
+    timestamp: { type: Date, default: Date.now },
+    metrics: { type: mongoose.Schema.Types.Mixed, default: {} },
+  },
+  { _id: false },
+);
+
 const adaptiveProfileSchema = new mongoose.Schema(
   {
     score: { type: Number, default: 50 },
@@ -33,6 +48,7 @@ const workingMemoryProgressSchema = new mongoose.Schema(
     unlockedLevels: { type: [Number], default: [1] },
     levelStats: { type: Map, of: mongoose.Schema.Types.Mixed, default: {} },
     levelProgress: { type: Map, of: Number, default: {} },
+    performanceHistory: { type: [performanceResultSchema], default: [] },
     adaptiveProfile: { type: adaptiveProfileSchema, default: () => ({}) },
   },
   {

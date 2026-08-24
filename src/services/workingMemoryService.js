@@ -9,6 +9,7 @@ const defaultProgressState = () => ({
   unlockedLevels: [1],
   levelStats: {},
   levelProgress: {},
+  performanceHistory: [],
   adaptiveProfile: createAdaptiveProfile(),
 });
 
@@ -154,12 +155,26 @@ export const recordAdaptiveResultForGame = async ({ userId, gameId, metrics = {}
   ensureKnownGame(gameId);
   const progress = await ensureGameProgress(userId, gameId);
   const adaptiveProfile = updateAdaptiveProfile(progress.adaptiveProfile, metrics);
+  const latestResult = adaptiveProfile.recentResults.at(-1);
+  const performanceResult = {
+    accuracy: latestResult?.accuracy ?? adaptiveProfile.lastAccuracy ?? 0,
+    mistakes: latestResult?.mistakes ?? null,
+    attempts: latestResult?.attempts ?? null,
+    averageResponseMs: latestResult?.averageResponseMs ?? null,
+    timestamp: latestResult?.timestamp ?? new Date(),
+    // Preserve the game-specific data too, so it remains available for future
+    // report improvements without changing the adaptive profile format.
+    metrics,
+  };
 
   const updated = await WorkingMemoryProgress.findOneAndUpdate(
     { userId, gameId },
     {
       $set: {
         adaptiveProfile,
+      },
+      $push: {
+        performanceHistory: performanceResult,
       },
     },
     { new: true },
