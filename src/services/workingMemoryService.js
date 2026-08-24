@@ -3,6 +3,38 @@ import { WorkingMemoryProgress } from '../models/WorkingMemoryProgress.js';
 import { createAdaptiveProfile, updateAdaptiveProfile } from './adaptiveDifficultyService.js';
 import { ApiError } from '../utils/ApiError.js';
 
+const TRANSIENT_MONGO_ERROR_CODES = new Set([
+  'ENOTFOUND',
+  'EAI_AGAIN',
+]);
+
+const isTransientMongoError = (error) => {
+  const code = error?.code || error?.cause?.code;
+  const message = String(error?.message || '');
+  return TRANSIENT_MONGO_ERROR_CODES.has(code)
+    || /ENOTFOUND|EAI_AGAIN|server selection timed out/i.test(message);
+};
+
+const wait = (milliseconds) => new Promise((resolve) => {
+  setTimeout(resolve, milliseconds);
+});
+
+const runWithMongoRetry = async (operation, maxAttempts = 3) => {
+  let lastError;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!isTransientMongoError(error) || attempt === maxAttempts) throw error;
+      await wait(250 * attempt);
+    }
+  }
+
+  throw lastError;
+};
+
 const defaultProgressState = () => ({
   currentLevel: 1,
   completedLevels: [],
@@ -153,7 +185,7 @@ export const completeLevelForGame = async ({ userId, gameId, level, stats = null
 
 export const recordAdaptiveResultForGame = async ({ userId, gameId, metrics = {} }) => {
   ensureKnownGame(gameId);
-  const progress = await ensureGameProgress(userId, gameId);
+  const progress = await runWithMongoRetry(() => ensureGameProgress(userId, gameId));
   const adaptiveProfile = updateAdaptiveProfile(progress.adaptiveProfile, metrics);
   const latestResult = adaptiveProfile.recentResults.at(-1);
   const performanceResult = {
@@ -167,7 +199,7 @@ export const recordAdaptiveResultForGame = async ({ userId, gameId, metrics = {}
     metrics,
   };
 
-  const updated = await WorkingMemoryProgress.findOneAndUpdate(
+  const updated = await runWithMongoRetry(() => WorkingMemoryProgress.findOneAndUpdate(
     { userId, gameId },
     {
       $set: {
@@ -178,7 +210,7 @@ export const recordAdaptiveResultForGame = async ({ userId, gameId, metrics = {}
       },
     },
     { new: true },
-  );
+  ));
 
   return normalizeProgressDocument(updated);
 };
