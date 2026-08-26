@@ -18,7 +18,17 @@ VALID_CLASSES = {
 
 image_path = sys.argv[1]
 
-results = model(image_path, imgsz=640, conf=0.35, verbose=False)
+# Test-time augmentation makes inference more tolerant of the uneven scale,
+# rotation and stroke shape common in drawings made by young children on a
+# mobile screen. Keep the same 40% acceptance floor; augmentation only makes
+# the model evaluate useful transformed views of the submitted image.
+results = model(
+    image_path,
+    imgsz=640,
+    conf=0.40,
+    augment=True,
+    verbose=False,
+)
 
 predictions = []
 

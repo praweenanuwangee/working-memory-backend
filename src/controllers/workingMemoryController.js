@@ -161,9 +161,9 @@ export const predictShape = async (req, res) => {
     if (prediction) {
       const confidence = prediction.confidence;
 
-      if (confidence < 0.50) {
+      if (confidence < 0.40) {
         confidenceLevel = 'Not Detected';
-      } else if (confidence < 0.60) {
+      } else if (confidence < 0.55) {
         confidenceLevel = 'Low';
       } else if (confidence < 0.70) {
         confidenceLevel = 'Medium';
