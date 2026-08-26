@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: working-memory-backend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PYTHON_COMMAND
+        value: python3
+      - key: MONGODB_URI
+        sync: false
+      - key: CLIENT_URLS
+        sync: false

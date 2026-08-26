@@ -14,14 +14,20 @@ import {
   predictShape,
 } from '../controllers/workingMemoryController.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import fs from 'fs';
 import multer from 'multer';
 import path from 'path';
 
-
 const router = Router();
+const uploadDirectory = path.resolve('uploads');
+
+// Render's filesystem starts clean after a restart, so create the temporary
+// upload directory each time the application starts.
+fs.mkdirSync(uploadDirectory, { recursive: true });
+
 const upload = multer({
   storage: multer.diskStorage({
-    destination: 'uploads/',
+    destination: uploadDirectory,
     filename: (req, file, cb) => {
       const extension = path.extname(file.originalname);
       const filename = `${Date.now()}${extension}`;
@@ -46,14 +52,6 @@ router.post('/progress/:gameId/reset-adaptive', asyncHandler(resetAdaptiveProfil
 router.post(
   '/predict-shape',
   upload.single('image'),
-  (req, res, next) => {
-    console.log('========== MULTER DEBUG ==========');
-    console.log('req.file:', req.file);
-    console.log('req.body:', req.body);
-    console.log('==================================');
-
-    next();
-  },
   asyncHandler(predictShape)
 );
 
