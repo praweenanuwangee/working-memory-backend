@@ -118,9 +118,7 @@ export const predictShape = async (req, res) => {
 
   try {
     const result = await new Promise((resolve, reject) => {
-      const pythonCommand = process.env.PYTHON_COMMAND
-        || (process.platform === 'win32' ? 'python' : 'python3');
-      const python = spawn(pythonCommand, [
+      const python = spawn('python', [
         predictScript,
         imagePath,
       ]);
