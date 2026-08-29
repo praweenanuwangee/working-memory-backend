@@ -86,9 +86,60 @@ export const ensureGameProgress = async (userId, gameId) => {
   return normalizeProgressDocument(progress);
 };
 
+const inferCompletedLevelsFromHistory = (document, game) => {
+  const inferred = new Set(document.completedLevels || []);
+
+  for (const result of document.performanceHistory || []) {
+    const metrics = result?.metrics || result;
+    const level = Number(metrics?.level);
+    if (!Number.isInteger(level) || level < 1 || level > game.maxLevels) continue;
+
+    const correct = Number(metrics.correct ?? metrics.completedCount ?? metrics.gamesCompleted);
+    const total = Number(metrics.total ?? metrics.totalGames);
+    const explicitlyPassed = metrics.passed === true;
+    const unambiguouslyCompleted = Number.isFinite(correct)
+      && Number.isFinite(total)
+      && total > 0
+      && correct >= total;
+
+    if (explicitlyPassed || unambiguouslyCompleted) inferred.add(level);
+  }
+
+  return [...inferred].sort((left, right) => left - right);
+};
+
+// Older clients could persist a perfect/passed performance result before the
+// separate complete-level request finished. Repair only unambiguous successes;
+// failed and partial attempts are never promoted.
+const repairLegacyCompletion = async (document) => {
+  const game = getGameDefinition(document.gameId);
+  if (!game) return document;
+
+  const completedLevels = inferCompletedLevelsFromHistory(document, game);
+  if (completedLevels.length === (document.completedLevels || []).length) return document;
+
+  const highestCompleted = Math.max(...completedLevels);
+  const unlockedLevels = Array.from(new Set([
+    1,
+    ...(document.unlockedLevels || []),
+    Math.min(game.maxLevels, highestCompleted + 1),
+  ])).sort((left, right) => left - right);
+
+  completedLevels.forEach((level) => document.levelProgress.set(String(level), 100));
+  document.completedLevels = completedLevels;
+  document.unlockedLevels = unlockedLevels;
+  document.currentLevel = Math.min(
+    game.maxLevels,
+    Math.max(document.currentLevel || 1, highestCompleted + 1),
+  );
+  await document.save();
+  return document;
+};
+
 export const getAllProgressForUser = async (userId) => {
   const documents = await WorkingMemoryProgress.find({ userId }).sort({ gameId: 1 });
-  const byGameId = new Map(documents.map((document) => {
+  const repairedDocuments = await Promise.all(documents.map(repairLegacyCompletion));
+  const byGameId = new Map(repairedDocuments.map((document) => {
     const normalized = normalizeProgressDocument(document);
     return [normalized.gameId, normalized];
   }));
