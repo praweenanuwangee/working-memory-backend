@@ -22,6 +22,8 @@ const __dirname = path.dirname(__filename);
 
 const mlFolder = path.resolve(__dirname, '../../ml');
 const predictScript = path.join(mlFolder, 'predict.py');
+const pythonExecutable = process.env.PYTHON_EXECUTABLE || 'python';
+const predictionTimeoutMs = Number(process.env.PREDICTION_TIMEOUT_MS) || 30000;
 
 const resolveUserId = (req) => {
   const bodyUserId = req.body && typeof req.body === 'object' ? req.body.userId : undefined;
@@ -118,13 +120,29 @@ export const predictShape = async (req, res) => {
 
   try {
     const result = await new Promise((resolve, reject) => {
-      const python = spawn('python', [
+      const python = spawn(pythonExecutable, [
         predictScript,
         imagePath,
       ]);
 
       let output = '';
       let errorOutput = '';
+      let settled = false;
+
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        callback(value);
+      };
+
+      const timeout = setTimeout(() => {
+        python.kill();
+        finish(
+          reject,
+          new ApiError(504, `Shape prediction timed out after ${predictionTimeoutMs}ms`),
+        );
+      }, predictionTimeoutMs);
 
       python.stdout.on('data', (data) => {
         output += data.toString();
@@ -134,21 +152,42 @@ export const predictShape = async (req, res) => {
         errorOutput += data.toString();
       });
 
+      python.on('error', (error) => {
+        finish(
+          reject,
+          new ApiError(
+            503,
+            `Could not start shape prediction with "${pythonExecutable}"`,
+            { cause: error.message },
+          ),
+        );
+      });
+
       python.on('close', (code) => {
+        if (settled) return;
+
         if (code !== 0) {
-          reject(
-            new Error(
-              `YOLO prediction failed: ${errorOutput}`
-            )
+          finish(
+            reject,
+            new ApiError(500, 'Shape prediction failed', {
+              cause: errorOutput.trim() || `Python exited with code ${code}`,
+            }),
           );
           return;
         }
 
         try {
-          resolve(JSON.parse(output));
+          const parsedOutput = JSON.parse(output);
+          if (!Array.isArray(parsedOutput)) {
+            throw new Error('Prediction output must be an array');
+          }
+          finish(resolve, parsedOutput);
         } catch (error) {
-          reject(
-            new Error('Invalid YOLO prediction response')
+          finish(
+            reject,
+            new ApiError(500, 'Invalid shape prediction response', {
+              cause: error.message,
+            }),
           );
         }
       });

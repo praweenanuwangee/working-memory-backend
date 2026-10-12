@@ -15,12 +15,22 @@ import {
 } from '../controllers/workingMemoryController.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import multer from 'multer';
+import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
 const router = Router();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const uploadDirectory = path.resolve(__dirname, '../../uploads');
+
+// Multer resolves relative destinations from process.cwd(). That made uploads
+// fail when the backend was launched from the repository root instead of the
+// working-memory-backend directory.
+fs.mkdirSync(uploadDirectory, { recursive: true });
+
 const upload = multer({
   storage: multer.diskStorage({
-    destination: 'uploads/',
+    destination: uploadDirectory,
     filename: (req, file, cb) => {
       const extension = path.extname(file.originalname);
       const filename = `${Date.now()}${extension}`;
@@ -45,14 +55,6 @@ router.post('/progress/:gameId/reset-adaptive', asyncHandler(resetAdaptiveProfil
 router.post(
   '/predict-shape',
   upload.single('image'),
-  (req, res, next) => {
-    console.log('========== MULTER DEBUG ==========');
-    console.log('req.file:', req.file);
-    console.log('req.body:', req.body);
-    console.log('==================================');
-
-    next();
-  },
   asyncHandler(predictShape)
 );
 
