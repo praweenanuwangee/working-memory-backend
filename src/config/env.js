@@ -2,14 +2,6 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const requiredKeys = ['MONGODB_URI'];
-
-for (const key of requiredKeys) {
-  if (!process.env[key]) {
-    throw new Error(`Missing required environment variable: ${key}`);
-  }
-}
-
 // Support comma-separated CLIENT_URLS (multi-origin) or a single CLIENT_URL
 const resolveClientUrls = () => {
   const raw = process.env.CLIENT_URLS || process.env.CLIENT_URL || 'http://localhost:5173';

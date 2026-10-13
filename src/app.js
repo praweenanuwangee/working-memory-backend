@@ -3,6 +3,7 @@ import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import { ApiError } from './utils/ApiError.js';
 
 import healthRoutes from './routes/healthRoutes.js';
 import workingMemoryRoutes from './routes/workingMemoryRoutes.js';
@@ -12,7 +13,7 @@ import {
   notFoundHandler,
 } from './middleware/errorHandler.js';
 
-export const createApp = ({ clientUrls = [] }) => {
+export const createApp = ({ clientUrls = [], databaseMiddleware } = {}) => {
   const app = express();
 
   // ============================================================
@@ -41,7 +42,7 @@ export const createApp = ({ clientUrls = [] }) => {
         }
 
         console.error('CORS blocked origin:', origin);
-        return callback(new Error('Not allowed by CORS'));
+        return callback(new ApiError(403, 'Not allowed by CORS'));
       },
 
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -88,8 +89,15 @@ export const createApp = ({ clientUrls = [] }) => {
   // ROUTES
   // ============================================================
 
+  if (databaseMiddleware) app.use('/api/health', databaseMiddleware);
   app.use('/api/health', healthRoutes);
 
+  if (databaseMiddleware) {
+    app.use('/api/working-memory', (req, res, next) => {
+      if (req.path === '/predict-shape' || req.path === '/games') return next();
+      return databaseMiddleware(req, res, next);
+    });
+  }
   app.use('/api/working-memory', workingMemoryRoutes);
 
   // ============================================================

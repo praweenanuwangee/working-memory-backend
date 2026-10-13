@@ -2,6 +2,7 @@ import dns from 'node:dns';
 import mongoose from 'mongoose';
 
 export const connectDatabase = async (mongoUri, dnsServers = []) => {
+  if (!mongoUri) throw new Error('Missing required environment variable: MONGODB_URI');
   console.log('\n📡 Connecting to MongoDB...');
   
   if (dnsServers.length > 0) {

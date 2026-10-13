@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "express",
+  "functions": {
+    "app.js": {
+      "maxDuration": 60,
+      "excludeFiles": "{ml/**,uploads/**,test/**}"
+    }
+  }
+}

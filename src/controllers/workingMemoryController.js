@@ -21,9 +21,6 @@ import fs from 'node:fs';
 // ============================================================
 
 // Python ML API URL configured in Vercel environment variables
-const predictionTimeoutMs =
-  Number(process.env.PREDICTION_TIMEOUT_MS) || 30000;
-
 // ============================================================
 // USER ID HELPER
 // ============================================================
@@ -260,8 +257,20 @@ export const predictShape = async (req, res) => {
     if (!mlApiUrl) {
       throw new ApiError(
         503,
-        'ML_API_URL is not configured'
+        'Shape prediction service is not configured'
       );
+    }
+
+    let predictionUrl;
+    try {
+      predictionUrl = new URL(`${mlApiUrl.trim().replace(/\/$/, '')}/predict-shape`);
+      if (!['http:', 'https:'].includes(predictionUrl.protocol) || predictionUrl.username || predictionUrl.password) throw new Error();
+    } catch {
+      throw new ApiError(503, 'Shape prediction service is not configured correctly');
+    }
+    const configuredTimeout = Number(process.env.PREDICTION_TIMEOUT_MS || 30000);
+    if (!Number.isInteger(configuredTimeout) || configuredTimeout <= 0 || configuredTimeout > 45000) {
+      throw new ApiError(503, 'Shape prediction timeout is not configured correctly');
     }
 
     // Read uploaded image from temporary storage
@@ -284,36 +293,25 @@ export const predictShape = async (req, res) => {
 
     try {
       response = await fetch(
-        `${mlApiUrl.replace(/\/$/, '')}/predict-shape`,
+        predictionUrl,
         {
           method: 'POST',
           body: formData,
           signal: AbortSignal.timeout(
-            predictionTimeoutMs
+            configuredTimeout
           ),
         }
       );
     } catch (error) {
-      console.error(
-        'ML API connection failed:',
-        error
-      );
-
       throw new ApiError(
-        503,
-        'Could not connect to shape prediction service'
+        error.name === 'TimeoutError' ? 504 : 503,
+        error.name === 'TimeoutError' ? 'Shape prediction service timed out' : 'Could not connect to shape prediction service'
       );
     }
 
     // Check Python API response
     if (!response.ok) {
-      const errorText = await response.text();
-
-      console.error(
-        'ML API prediction failed:',
-        response.status,
-        errorText
-      );
+      await response.body?.cancel();
 
       throw new ApiError(
         502,
@@ -321,7 +319,13 @@ export const predictShape = async (req, res) => {
       );
     }
 
-    const predictions = await response.json();
+    let predictions;
+    try {
+      predictions = await response.json();
+    } catch (error) {
+      throw new ApiError(error.name === 'TimeoutError' ? 504 : 502,
+        error.name === 'TimeoutError' ? 'Shape prediction service timed out' : 'Invalid ML prediction response');
+    }
 
     if (!Array.isArray(predictions)) {
       throw new ApiError(
@@ -331,7 +335,15 @@ export const predictShape = async (req, res) => {
     }
 
     // Select strongest prediction
-    const prediction = predictions[0] || null;
+    for (const item of predictions) {
+      if (!item || !['circle', 'square', 'triangle'].includes(item.shape) ||
+          typeof item.confidence !== 'number' || !Number.isFinite(item.confidence) ||
+          item.confidence < 0 || item.confidence > 1) {
+        throw new ApiError(502, 'Invalid ML prediction response');
+      }
+    }
+    const prediction = predictions.reduce((best, item) =>
+      !best || item.confidence > best.confidence ? item : best, null);
 
     // Calculate confidence level
     let confidenceLevel = 'Not Detected';
@@ -366,7 +378,8 @@ export const predictShape = async (req, res) => {
       success: true,
       data: prediction
         ? {
-            ...prediction,
+            shape: prediction.shape,
+            confidence: prediction.confidence,
             confidenceLevel,
           }
         : {

@@ -18,7 +18,8 @@ import {
 import { asyncHandler } from '../utils/asyncHandler.js';
 
 import multer from 'multer';
-import fs from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { ApiError } from '../utils/ApiError.js';
 import path from 'node:path';
 import os from 'node:os';
 
@@ -31,10 +32,7 @@ const router = Router();
 // Vercel serverless functions have a read-only application
 // directory. Use the writable temporary directory instead.
 
-const uploadDirectory = path.join(os.tmpdir(), 'uploads');
-
-// Create the upload directory if it does not exist.
-fs.mkdirSync(uploadDirectory, { recursive: true });
+const uploadDirectory = os.tmpdir();
 
 // ============================================================
 // MULTER CONFIGURATION
@@ -49,7 +47,7 @@ const storage = multer.diskStorage({
     const extension = path.extname(file.originalname);
 
     const uniqueName =
-      `${Date.now()}-${Math.round(Math.random() * 1e9)}${extension}`;
+      `working-memory-${randomUUID()}${extension}`;
 
     cb(null, uniqueName);
   },
@@ -59,7 +57,7 @@ const upload = multer({
   storage,
 
   limits: {
-    fileSize: 5 * 1024 * 1024, // Maximum 5 MB
+    fileSize: 4 * 1024 * 1024, // Leave room for multipart overhead below Vercel's 4.5 MB limit.
   },
 
   fileFilter: (req, file, cb) => {
@@ -72,7 +70,7 @@ const upload = multer({
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Only JPG, PNG and WEBP images are allowed.'));
+      cb(new ApiError(400, 'Only JPG, PNG and WEBP images are allowed.'));
     }
   },
 });
