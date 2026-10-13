@@ -118,7 +118,13 @@ Set in the Vercel project's Production and Preview environments:
 - Optional `DNS_SERVERS`: existing MongoDB DNS override, unchanged.
 
 Do not set ML_API_URL or PYTHON_EXECUTABLE in Vercel. Python 3.12 is selected in
-.python-version. Root requirements.txt requests CPU wheels to avoid CUDA packages.
+.python-version. Root requirements.txt is flat: it uses PEP 508 direct references
+to the verified Linux x86_64 CPython 3.12 CPU wheels for torch 2.13.0 and
+torchvision 0.28.0, followed by explicit Ultralytics/headless OpenCV/Pillow pins.
+It contains no nested `-r` includes or pip index directives, avoiding Vercel's
+reported included-file parsing failure. These wheel URLs are Linux/Python 3.12
+specific; use ml/requirements.txt for local Windows installation instead.
+Successful parsing is separate from Linux imports, bundle limits and inference.
 The model is explicitly included; Node dependencies and development files are
 excluded from Python. Vercel does not use a Dockerfile for this deployment.
 
