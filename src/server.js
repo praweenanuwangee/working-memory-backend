@@ -10,7 +10,7 @@ const startServer = async () => {
   await connectDatabase(env.mongoUri, env.dnsServers);
 
   const app = createApp({ clientUrls: env.clientUrls });
-  app.listen(env.port, () => {
+  app.listen(env.port, '0.0.0.0', () => {
     const baseUrl = `http://localhost:${env.port}`;
     console.log(`\n✅ Server running successfully!`);
     console.log(`   URL: ${baseUrl}`);

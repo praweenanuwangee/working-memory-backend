@@ -14,4 +14,4 @@ const walk = (directory) => {
   }
 };
 check('app.js');
-for (const directory of ['src', 'scripts', 'test']) walk(directory);
+for (const directory of ['api', 'src', 'scripts', 'test']) walk(directory);

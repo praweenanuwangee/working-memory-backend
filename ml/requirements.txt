@@ -1,0 +1,6 @@
+# Vercel's root requirements.txt selects Linux CPU PyTorch wheels.
+torch==2.13.0
+torchvision==0.28.0
+ultralytics-opencv-headless==8.4.115
+opencv-python-headless==5.0.0.93
+Pillow==11.3.0

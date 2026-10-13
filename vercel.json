@@ -1,10 +1,19 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "express",
+  "framework": null,
   "functions": {
-    "app.js": {
+    "api/index.js": {
       "maxDuration": 60,
-      "excludeFiles": "{ml/**,uploads/**,test/**}"
+      "excludeFiles": "{ml/**,test/**,.tmp-wheel-audit/**}"
+    },
+    "api/predict_shape.py": {
+      "maxDuration": 120,
+      "includeFiles": "ml/**",
+      "excludeFiles": "{node_modules/**,src/**,test/**,scripts/**,uploads/**,.tmp-wheel-audit/**,.git/**,.env*,ml/test-circle.jpeg,**/__pycache__/**}"
     }
-  }
+  },
+  "rewrites": [
+    { "source": "/api/working-memory/predict-shape", "destination": "/api/predict_shape" },
+    { "source": "/(.*)", "destination": "/api/index" }
+  ]
 }

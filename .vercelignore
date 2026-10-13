@@ -1,0 +1,8 @@
+.env
+.env.*
+.tmp-wheel-audit/
+uploads/
+test/
+**/__pycache__/
+**/*.pyc
+.venv/

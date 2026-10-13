@@ -15,12 +15,13 @@ import {
 
 import { ApiError } from '../utils/ApiError.js';
 import fs from 'node:fs';
+import { runPrediction } from '../services/shapePredictionService.js';
 
 // ============================================================
 // CONFIGURATION
 // ============================================================
 
-// Python ML API URL configured in Vercel environment variables
+// Local CLI fallback; Vercel routes prediction directly to its Python Function.
 // ============================================================
 // USER ID HELPER
 // ============================================================
@@ -239,7 +240,7 @@ export const resetProgress = async (req, res) => {
 };
 
 // ============================================================
-// SHAPE PREDICTION - PYTHON ML API
+// SHAPE PREDICTION - LOCAL PYTHON
 // ============================================================
 
 export const predictShape = async (req, res) => {
@@ -251,81 +252,9 @@ export const predictShape = async (req, res) => {
   }
 
   const imagePath = req.file.path;
-  const mlApiUrl = process.env.ML_API_URL;
 
   try {
-    if (!mlApiUrl) {
-      throw new ApiError(
-        503,
-        'Shape prediction service is not configured'
-      );
-    }
-
-    let predictionUrl;
-    try {
-      predictionUrl = new URL(`${mlApiUrl.trim().replace(/\/$/, '')}/predict-shape`);
-      if (!['http:', 'https:'].includes(predictionUrl.protocol) || predictionUrl.username || predictionUrl.password) throw new Error();
-    } catch {
-      throw new ApiError(503, 'Shape prediction service is not configured correctly');
-    }
-    const configuredTimeout = Number(process.env.PREDICTION_TIMEOUT_MS || 30000);
-    if (!Number.isInteger(configuredTimeout) || configuredTimeout <= 0 || configuredTimeout > 45000) {
-      throw new ApiError(503, 'Shape prediction timeout is not configured correctly');
-    }
-
-    // Read uploaded image from temporary storage
-    const imageBuffer =
-      await fs.promises.readFile(imagePath);
-
-    // Prepare multipart form data for Python ML API
-    const formData = new FormData();
-
-    formData.append(
-      'image',
-      new Blob([imageBuffer], {
-        type: req.file.mimetype || 'image/png',
-      }),
-      req.file.originalname || 'shape.png'
-    );
-
-    // Send image to Python ML API
-    let response;
-
-    try {
-      response = await fetch(
-        predictionUrl,
-        {
-          method: 'POST',
-          body: formData,
-          signal: AbortSignal.timeout(
-            configuredTimeout
-          ),
-        }
-      );
-    } catch (error) {
-      throw new ApiError(
-        error.name === 'TimeoutError' ? 504 : 503,
-        error.name === 'TimeoutError' ? 'Shape prediction service timed out' : 'Could not connect to shape prediction service'
-      );
-    }
-
-    // Check Python API response
-    if (!response.ok) {
-      await response.body?.cancel();
-
-      throw new ApiError(
-        502,
-        'Shape prediction service returned an error'
-      );
-    }
-
-    let predictions;
-    try {
-      predictions = await response.json();
-    } catch (error) {
-      throw new ApiError(error.name === 'TimeoutError' ? 504 : 502,
-        error.name === 'TimeoutError' ? 'Shape prediction service timed out' : 'Invalid ML prediction response');
-    }
+    const predictions = await runPrediction(imagePath);
 
     if (!Array.isArray(predictions)) {
       throw new ApiError(

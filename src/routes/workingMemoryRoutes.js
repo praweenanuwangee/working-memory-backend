@@ -29,8 +29,7 @@ const router = Router();
 // UPLOAD DIRECTORY CONFIGURATION
 // ============================================================
 
-// Vercel serverless functions have a read-only application
-// directory. Use the writable temporary directory instead.
+// Use the operating system's writable temporary directory.
 
 const uploadDirectory = os.tmpdir();
 
@@ -57,7 +56,7 @@ const upload = multer({
   storage,
 
   limits: {
-    fileSize: 4 * 1024 * 1024, // Leave room for multipart overhead below Vercel's 4.5 MB limit.
+    fileSize: 4 * 1024 * 1024,
   },
 
   fileFilter: (req, file, cb) => {

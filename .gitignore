@@ -5,3 +5,8 @@ yarn-debug.log*
 yarn-error.log*
 coverage/
 dist/
+__pycache__/
+*.pyc
+.venv/
+.tmp-wheel-audit/
+.vercel/
