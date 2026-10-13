@@ -92,13 +92,14 @@ export const createApp = ({ clientUrls = [], databaseMiddleware } = {}) => {
   if (databaseMiddleware) app.use('/api/health', databaseMiddleware);
   app.use('/api/health', healthRoutes);
 
+  const workingMemoryPaths = ['/api/working-memory', '/api/workingMemory'];
   if (databaseMiddleware) {
-    app.use('/api/working-memory', (req, res, next) => {
+    app.use(workingMemoryPaths, (req, res, next) => {
       if (req.path === '/predict-shape' || req.path === '/games') return next();
       return databaseMiddleware(req, res, next);
     });
   }
-  app.use('/api/working-memory', workingMemoryRoutes);
+  app.use(workingMemoryPaths, workingMemoryRoutes);
 
   // ============================================================
   // ERROR HANDLING

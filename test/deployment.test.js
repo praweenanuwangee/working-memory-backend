@@ -12,6 +12,31 @@ import { createApp } from '../src/app.js';
 
 process.env.NODE_ENV = 'test';
 
+test('both Working Memory prefixes share routes and database middleware', async (t) => {
+  let databaseCalls = 0;
+  const app = createApp({ databaseMiddleware: (req, res) => {
+    databaseCalls += 1;
+    res.status(503).json({ message: 'Database unavailable for routing test' });
+  } });
+  const server = app.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => new Promise((resolve) => { server.close(resolve); server.closeAllConnections(); }));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const games = [];
+  for (const prefix of ['/api/working-memory', '/api/workingMemory']) {
+    const response = await fetch(`${url}${prefix}/games`);
+    assert.equal(response.status, 200);
+    games.push(await response.json());
+    const prediction = await fetch(`${url}${prefix}/predict-shape`, { method: 'POST' });
+    assert.equal(prediction.status, 400);
+    assert.equal((await prediction.json()).message, 'Image file is required');
+    assert.equal(databaseCalls, games.length - 1);
+    assert.equal((await fetch(`${url}${prefix}/progress`)).status, 503);
+    assert.equal(databaseCalls, games.length);
+  }
+  assert.deepEqual(games[0], games[1]);
+});
+
 test('CORS, real Python image prediction, uploads and subprocess failures', async (t) => {
   const app = createApp({ clientUrls: ['https://frontend.example'] });
   const server = app.listen(0, '127.0.0.1');
