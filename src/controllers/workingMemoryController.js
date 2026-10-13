@@ -1,3 +1,4 @@
+
 import {
   completeLevelForGame,
   ensureGameProgress,
@@ -11,28 +12,46 @@ import {
   resetAllProgressForUser,
   updateLevelProgressForGame,
 } from '../services/workingMemoryService.js';
+
 import { ApiError } from '../utils/ApiError.js';
-import fs from 'fs';
-import path from 'path';
-import { spawn } from 'child_process';
-import { fileURLToPath } from 'url';
+import fs from 'node:fs';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// ============================================================
+// CONFIGURATION
+// ============================================================
 
-const mlFolder = path.resolve(__dirname, '../../ml');
-const predictScript = path.join(mlFolder, 'predict.py');
-const pythonExecutable = process.env.PYTHON_EXECUTABLE || 'python';
-const predictionTimeoutMs = Number(process.env.PREDICTION_TIMEOUT_MS) || 30000;
+// Python ML API URL configured in Vercel environment variables
+const predictionTimeoutMs =
+  Number(process.env.PREDICTION_TIMEOUT_MS) || 30000;
+
+// ============================================================
+// USER ID HELPER
+// ============================================================
 
 const resolveUserId = (req) => {
-  const bodyUserId = req.body && typeof req.body === 'object' ? req.body.userId : undefined;
-  const userId = bodyUserId || req.query.userId || req.headers['x-user-id'];
+  const bodyUserId =
+    req.body && typeof req.body === 'object'
+      ? req.body.userId
+      : undefined;
+
+  const userId =
+    bodyUserId ||
+    req.query.userId ||
+    req.headers['x-user-id'];
+
   if (!userId || typeof userId !== 'string') {
-    throw new ApiError(400, 'userId is required in body, query, or x-user-id header');
+    throw new ApiError(
+      400,
+      'userId is required in body, query, or x-user-id header'
+    );
   }
+
   return userId.trim();
 };
+
+// ============================================================
+// GAME MANAGEMENT
+// ============================================================
 
 export const getGames = async (req, res) => {
   res.status(200).json({
@@ -42,163 +61,292 @@ export const getGames = async (req, res) => {
 };
 
 export const getOverview = async (req, res) => {
-  // userId is optional — returns user-specific stats when provided
-  const rawUserId = req.query.userId || req.headers['x-user-id'];
-  const userId = rawUserId && typeof rawUserId === 'string' ? rawUserId.trim() || null : null;
+  const rawUserId =
+    req.query.userId || req.headers['x-user-id'];
+
+  const userId =
+    rawUserId && typeof rawUserId === 'string'
+      ? rawUserId.trim() || null
+      : null;
+
   const data = await getOverviewForUser(userId);
-  res.status(200).json({ success: true, data });
+
+  res.status(200).json({
+    success: true,
+    data,
+  });
 };
+
+// ============================================================
+// PROGRESS TRACKING
+// ============================================================
 
 export const initializeGame = async (req, res) => {
   const userId = resolveUserId(req);
-  const data = await ensureGameProgress(userId, req.params.gameId);
-  res.status(200).json({ success: true, data });
+
+  const data = await ensureGameProgress(
+    userId,
+    req.params.gameId
+  );
+
+  res.status(200).json({
+    success: true,
+    data,
+  });
 };
 
 export const getAllProgress = async (req, res) => {
   const userId = resolveUserId(req);
+
   const data = await getAllProgressForUser(userId);
-  res.status(200).json({ success: true, data });
+
+  res.status(200).json({
+    success: true,
+    data,
+  });
 };
 
 export const getGameProgress = async (req, res) => {
   const userId = resolveUserId(req);
-  const data = await getProgressForGame(userId, req.params.gameId);
-  res.status(200).json({ success: true, data });
+
+  const data = await getProgressForGame(
+    userId,
+    req.params.gameId
+  );
+
+  res.status(200).json({
+    success: true,
+    data,
+  });
 };
 
 export const updateLevelProgress = async (req, res) => {
   const userId = resolveUserId(req);
+
   const { level, percent, stats } = req.body;
-  if (!Number.isFinite(Number(percent)) || Number(percent) < 0 || Number(percent) > 100) {
-    throw new ApiError(400, 'percent must be a number between 0 and 100');
+
+  if (
+    !Number.isFinite(Number(percent)) ||
+    Number(percent) < 0 ||
+    Number(percent) > 100
+  ) {
+    throw new ApiError(
+      400,
+      'percent must be a number between 0 and 100'
+    );
   }
-  const data = await updateLevelProgressForGame({ userId, gameId: req.params.gameId, level, percent, stats });
-  res.status(200).json({ success: true, data });
+
+  const data = await updateLevelProgressForGame({
+    userId,
+    gameId: req.params.gameId,
+    level,
+    percent,
+    stats,
+  });
+
+  res.status(200).json({
+    success: true,
+    data,
+  });
 };
 
 export const completeLevel = async (req, res) => {
   const userId = resolveUserId(req);
+
   const { level, stats } = req.body;
-  const data = await completeLevelForGame({ userId, gameId: req.params.gameId, level, stats });
-  res.status(200).json({ success: true, data });
+
+  const data = await completeLevelForGame({
+    userId,
+    gameId: req.params.gameId,
+    level,
+    stats,
+  });
+
+  res.status(200).json({
+    success: true,
+    data,
+  });
 };
+
+// ============================================================
+// ADAPTIVE LEARNING
+// ============================================================
 
 export const recordAdaptiveResult = async (req, res) => {
   const userId = resolveUserId(req);
+
   const { metrics } = req.body;
-  if (metrics !== undefined && (typeof metrics !== 'object' || metrics === null || Array.isArray(metrics))) {
-    throw new ApiError(400, 'metrics must be a plain object');
+
+  if (
+    metrics !== undefined &&
+    (
+      typeof metrics !== 'object' ||
+      metrics === null ||
+      Array.isArray(metrics)
+    )
+  ) {
+    throw new ApiError(
+      400,
+      'metrics must be a plain object'
+    );
   }
-  const data = await recordAdaptiveResultForGame({ userId, gameId: req.params.gameId, metrics: metrics || {} });
-  res.status(200).json({ success: true, data });
+
+  const data = await recordAdaptiveResultForGame({
+    userId,
+    gameId: req.params.gameId,
+    metrics: metrics || {},
+  });
+
+  res.status(200).json({
+    success: true,
+    data,
+  });
 };
 
 export const resetAdaptiveProfile = async (req, res) => {
   const userId = resolveUserId(req);
-  const data = await resetAdaptiveProfileForGame({ userId, gameId: req.params.gameId });
-  res.status(200).json({ success: true, data });
+
+  const data = await resetAdaptiveProfileForGame(
+    userId,
+    req.params.gameId
+  );
+
+  res.status(200).json({
+    success: true,
+    data,
+  });
 };
 
 export const resetAllAdaptiveProfiles = async (req, res) => {
   const userId = resolveUserId(req);
-  const data = await resetAllAdaptiveProfilesForUser(userId);
-  res.status(200).json({ success: true, data });
+
+  const data = await resetAllAdaptiveProfilesForUser(
+    userId
+  );
+
+  res.status(200).json({
+    success: true,
+    data,
+  });
 };
 
 export const resetProgress = async (req, res) => {
   const userId = resolveUserId(req);
+
   const data = await resetAllProgressForUser(userId);
-  res.status(200).json({ success: true, data });
+
+  res.status(200).json({
+    success: true,
+    data,
+  });
 };
+
+// ============================================================
+// SHAPE PREDICTION - PYTHON ML API
+// ============================================================
+
 export const predictShape = async (req, res) => {
   if (!req.file) {
-    throw new ApiError(400, 'Image file is required');
+    throw new ApiError(
+      400,
+      'Image file is required'
+    );
   }
 
   const imagePath = req.file.path;
+  const mlApiUrl = process.env.ML_API_URL;
 
   try {
-    const result = await new Promise((resolve, reject) => {
-      const python = spawn(pythonExecutable, [
-        predictScript,
-        imagePath,
-      ]);
+    if (!mlApiUrl) {
+      throw new ApiError(
+        503,
+        'ML_API_URL is not configured'
+      );
+    }
 
-      let output = '';
-      let errorOutput = '';
-      let settled = false;
+    // Read uploaded image from temporary storage
+    const imageBuffer =
+      await fs.promises.readFile(imagePath);
 
-      const finish = (callback, value) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timeout);
-        callback(value);
-      };
+    // Prepare multipart form data for Python ML API
+    const formData = new FormData();
 
-      const timeout = setTimeout(() => {
-        python.kill();
-        finish(
-          reject,
-          new ApiError(504, `Shape prediction timed out after ${predictionTimeoutMs}ms`),
-        );
-      }, predictionTimeoutMs);
+    formData.append(
+      'image',
+      new Blob([imageBuffer], {
+        type: req.file.mimetype || 'image/png',
+      }),
+      req.file.originalname || 'shape.png'
+    );
 
-      python.stdout.on('data', (data) => {
-        output += data.toString();
-      });
+    // Send image to Python ML API
+    let response;
 
-      python.stderr.on('data', (data) => {
-        errorOutput += data.toString();
-      });
-
-      python.on('error', (error) => {
-        finish(
-          reject,
-          new ApiError(
-            503,
-            `Could not start shape prediction with "${pythonExecutable}"`,
-            { cause: error.message },
+    try {
+      response = await fetch(
+        `${mlApiUrl.replace(/\/$/, '')}/predict-shape`,
+        {
+          method: 'POST',
+          body: formData,
+          signal: AbortSignal.timeout(
+            predictionTimeoutMs
           ),
-        );
-      });
-
-      python.on('close', (code) => {
-        if (settled) return;
-
-        if (code !== 0) {
-          finish(
-            reject,
-            new ApiError(500, 'Shape prediction failed', {
-              cause: errorOutput.trim() || `Python exited with code ${code}`,
-            }),
-          );
-          return;
         }
+      );
+    } catch (error) {
+      console.error(
+        'ML API connection failed:',
+        error
+      );
 
-        try {
-          const parsedOutput = JSON.parse(output);
-          if (!Array.isArray(parsedOutput)) {
-            throw new Error('Prediction output must be an array');
-          }
-          finish(resolve, parsedOutput);
-        } catch (error) {
-          finish(
-            reject,
-            new ApiError(500, 'Invalid shape prediction response', {
-              cause: error.message,
-            }),
-          );
-        }
-      });
-    });
+      throw new ApiError(
+        503,
+        'Could not connect to shape prediction service'
+      );
+    }
 
-    const prediction = result[0] || null;
+    // Check Python API response
+    if (!response.ok) {
+      const errorText = await response.text();
 
+      console.error(
+        'ML API prediction failed:',
+        response.status,
+        errorText
+      );
+
+      throw new ApiError(
+        502,
+        'Shape prediction service returned an error'
+      );
+    }
+
+    const predictions = await response.json();
+
+    if (!Array.isArray(predictions)) {
+      throw new ApiError(
+        502,
+        'Invalid ML prediction response'
+      );
+    }
+
+    // Select strongest prediction
+    const prediction = predictions[0] || null;
+
+    // Calculate confidence level
     let confidenceLevel = 'Not Detected';
 
     if (prediction) {
-      const confidence = prediction.confidence;
+      const confidence = Number(
+        prediction.confidence
+      );
+
+      if (!Number.isFinite(confidence)) {
+        throw new ApiError(
+          502,
+          'Invalid prediction confidence'
+        );
+      }
 
       if (confidence < 0.40) {
         confidenceLevel = 'Not Detected';
@@ -213,6 +361,7 @@ export const predictShape = async (req, res) => {
       }
     }
 
+    // Send prediction result to React frontend
     res.status(200).json({
       success: true,
       data: prediction
@@ -226,9 +375,16 @@ export const predictShape = async (req, res) => {
             confidenceLevel: 'Not Detected',
           },
     });
+
   } finally {
-    if (fs.existsSync(imagePath)) {
-      fs.unlinkSync(imagePath);
+    // Remove uploaded temporary image
+    try {
+      await fs.promises.unlink(imagePath);
+    } catch (error) {
+      console.warn(
+        'Temporary image cleanup failed:',
+        error.message
+      );
     }
   }
 };

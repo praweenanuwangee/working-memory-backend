@@ -1,57 +1,82 @@
+
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from ultralytics import YOLO
-import sys
-import json
-import os
+from pathlib import Path
+from PIL import Image
+import io
 
-MODEL_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "best (3).pt"
-)
+app = FastAPI()
 
-model = YOLO(MODEL_PATH)
+BASE_DIR = Path(__file__).resolve().parent
+MODEL_PATH = BASE_DIR / "best (3).pt"
 
-VALID_CLASSES = {
-    "circle",
-    "square",
-    "triangle"
-}
+model = YOLO(str(MODEL_PATH))
 
-image_path = sys.argv[1]
+VALID_CLASSES = {"circle", "square", "triangle"}
 
-# Test-time augmentation makes inference more tolerant of the uneven scale,
-# rotation and stroke shape common in drawings made by young children on a
-# mobile screen. Keep the same 40% acceptance floor; augmentation only makes
-# the model evaluate useful transformed views of the submitted image.
-results = model(
-    image_path,
-    imgsz=640,
-    conf=0.40,
-    augment=True,
-    verbose=False,
-)
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
-predictions = []
+@app.post("/predict-shape")
+async def predict_shape(image: UploadFile = File(...)):
+    if image.content_type not in [
+        "image/jpeg",
+        "image/png",
+        "image/webp"
+    ]:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid image format"
+        )
 
-for result in results:
-    if result.boxes is None:
-        continue
+    image_bytes = await image.read()
 
-    for box in result.boxes:
-        class_id = int(box.cls[0])
-        confidence = float(box.conf[0])
+    if len(image_bytes) > 5 * 1024 * 1024:
+        raise HTTPException(
+            status_code=413,
+            detail="Image too large"
+        )
 
-        class_name = model.names[class_id]
+    try:
+        image_data = Image.open(
+            io.BytesIO(image_bytes)
+        ).convert("RGB")
 
-        if class_name not in VALID_CLASSES:
-            continue
+        results = model(
+            image_data,
+            imgsz=640,
+            conf=0.40,
+            augment=True,
+            verbose=False
+        )
 
-        predictions.append({
-            "shape": class_name,
-            "confidence": confidence
-        })
+        predictions = []
 
-# A detector can return several overlapping candidates. The frontend needs the
-# strongest valid shape, not whichever box happens to appear first.
-predictions.sort(key=lambda prediction: prediction["confidence"], reverse=True)
+        for result in results:
+            if result.boxes is None:
+                continue
 
-print(json.dumps(predictions[:1]))
+            for box in result.boxes:
+                class_id = int(box.cls[0])
+                confidence = float(box.conf[0])
+                class_name = model.names[class_id]
+
+                if class_name in VALID_CLASSES:
+                    predictions.append({
+                        "shape": class_name,
+                        "confidence": confidence
+                    })
+
+        predictions.sort(
+            key=lambda item: item["confidence"],
+            reverse=True
+        )
+
+        return predictions[:1]
+
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Shape prediction failed"
+        )
