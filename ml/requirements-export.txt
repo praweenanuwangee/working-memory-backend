@@ -1,0 +1,5 @@
+# Development only. Never install these into the Vercel function.
+torch==2.13.0
+torchvision==0.28.0
+ultralytics-opencv-headless==8.4.115
+onnx==1.23.2

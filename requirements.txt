@@ -1,5 +1,5 @@
-torch @ https://download.pytorch.org/whl/cpu/torch-2.13.0%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl
-torchvision @ https://download.pytorch.org/whl/cpu/torchvision-0.28.0%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl
-ultralytics-opencv-headless==8.4.115
+onnxruntime==1.31.0
+numpy==2.5.4
 opencv-python-headless==5.0.0.93
 Pillow==11.3.0
+Flask==3.1.2

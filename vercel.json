@@ -23,8 +23,8 @@
       "functions": {
         "app.py": {
           "maxDuration": 120,
-          "includeFiles": "best (3).pt",
-          "excludeFiles": "{test-circle.jpeg,**/__pycache__/**}"
+          "includeFiles": "shape.onnx",
+          "excludeFiles": "{*.pt,predict.py,requirements-export.txt,test-circle.jpeg,**/__pycache__/**}"
         }
       }
     }

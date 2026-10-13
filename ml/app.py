@@ -10,9 +10,9 @@ from flask import Flask, jsonify, request
 from werkzeug.exceptions import RequestEntityTooLarge
 
 if __package__:
-    from .predict import predict
+    from .onnx_predict import predict
 else:
-    from predict import predict
+    from onnx_predict import predict
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 4 * 1024 * 1024 + 128 * 1024
