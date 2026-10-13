@@ -94,6 +94,29 @@ for ML after PREDICTION_TIMEOUT_MS (default 60000, maximum 110000); Python may
 continue an already running native inference until it completes or the platform
 terminates it. The platform's hard timeout can produce a non-JSON response.
 
+### Build rejected at the 500 MB limit
+
+The reported Vercel build measured the ML bundle at **1189.34 MB** and enforced
+the standard **500 MB** limit. Dependency parsing and the Express build succeeded;
+the remaining failure is Python packaging capacity. The ignored `api/` warning is
+expected because these Services use `app.js` and `ml/app.py` as entrypoints.
+
+`VERCEL_SUPPORT_LARGE_FUNCTIONS=1` in `.env.example` does not enable the feature:
+that file is documentation and is excluded from deployment. Add the variable in
+the actual Vercel project's Environment Variables, selecting Production and
+Preview as needed. Confirm Fluid Compute with Active CPU is enabled and that the
+project does not use Secure Compute or Static IPs. Create a fresh deployment
+after changing settings; environment changes do not alter an existing deployment.
+
+If a fresh build still enforces 500 MB, Large Functions has not taken effect for
+that build. Confirm the variable's value/scope and project eligibility with
+Vercel. Increasing memory or maxDuration does not raise the bundle-size limit.
+Splitting routes cannot make this dependency stack fit: its CPU Torch wheel alone
+was measured at 699,419,445 bytes unpacked. Do not exclude required Torch libraries
+or the trained model simply to bypass packaging validation. The existing native
+Python workload requires a supported larger bundle allowance before deployment
+can proceed; no hosted inference success is established by these logs.
+
 ### Environment and deployment
 
 Set MONGODB_URI, CLIENT_URLS (or legacy CLIENT_URL), NODE_ENV=production,
