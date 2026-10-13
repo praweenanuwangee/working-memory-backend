@@ -32,6 +32,9 @@ test('CORS, real Python image prediction, uploads and subprocess failures', asyn
   assert.equal(blocked.status, 403);
   assert.equal(blocked.headers.get('access-control-allow-origin'), null);
   assert.equal((await fetch(`${url}/api/working-memory/games`)).status, 200);
+  const unprefixed = await fetch(`${url}/predict-shape`, { method: 'POST' });
+  assert.equal(unprefixed.status, 404);
+  assert.equal((await unprefixed.json()).message, 'Route not found: POST /predict-shape');
   assert.equal((await fetch(endpoint, { method: 'POST' })).status, 400);
   const image = await readFile('ml/test-circle.jpeg');
   const upload = async (type = 'image/jpeg', bytes = image, field = 'image') => {

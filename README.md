@@ -47,6 +47,30 @@ Backend service for the Smart Learn working-memory module.
 
 ## Vercel Services deployment
 
+The public frontend must use the full Express path. For a domain-only Axios base
+URL, the request is:
+
+```javascript
+const api = axios.create({ baseURL: 'https://working-memory-backend-f7qu.vercel.app' });
+const form = new FormData();
+form.append('image', imageFile);
+await api.post('/api/working-memory/predict-shape', form);
+```
+
+Alternatively, set the base URL to
+`https://working-memory-backend-f7qu.vercel.app/api/working-memory` and post to
+`/predict-shape`. Do not omit or duplicate the `/api/working-memory` prefix.
+The domain-root `/predict-shape` path is intentionally not a public Express route;
+that path belongs to the internal ML service and is called only over its binding.
+Vercel service rewrites preserve the original public path. Verify the final URL
+in the browser Network tab, update the frontend's existing API configuration,
+and redeploy the frontend if the URL comes from a Vite environment variable.
+
+Live checks on 2026-10-13 against `working-memory-backend-f7qu.vercel.app` returned
+games 200, sample-image prediction 200 and both localhost preflights 204.
+`GET /api/working-memory/progress?userId=test-user` returned 503 with
+`Database service unavailable`; database connectivity remains a separate issue.
+
 `vercel.json` defines two services in one project:
 
 - `app`: root `.`, Express, entrypoint `app.js`. Public through the catch-all
