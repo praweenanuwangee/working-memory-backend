@@ -6,6 +6,8 @@ import childProcess from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
 import { readdir, readFile } from 'node:fs/promises';
 import os from 'node:os';
+import express from 'express';
+import multer from 'multer';
 import { createApp } from '../src/app.js';
 
 process.env.NODE_ENV = 'test';
@@ -106,11 +108,60 @@ test('CORS, real Python image prediction, uploads and subprocess failures', asyn
   assert.deepEqual((await readdir(os.tmpdir())).filter((name) => name.startsWith('working-memory-')).sort(), before);
 });
 
-test('mixed-runtime rewrites prioritize Python and Node entrypoint exports the app', async () => {
+test('service routing exposes Express and grants its internal ML binding', async () => {
   const config = JSON.parse(await readFile('vercel.json', 'utf8'));
-  assert.equal(config.framework, null);
-  assert.equal(config.rewrites[0].source, '/api/working-memory/predict-shape');
-  assert.equal(config.rewrites[0].destination, '/api/predict_shape');
+  assert.equal(config.framework, undefined);
+  assert.equal(config.functions, undefined);
+  assert.deepEqual(config.rewrites, [{ source: '/(.*)', destination: { service: 'app' } }]);
+  assert.deepEqual(config.services.app.bindings, [{ type: 'service', service: 'ml', format: 'url', env: 'ML_SERVICE_URL' }]);
+  assert.equal(config.services.ml.root, 'ml');
   const { default: app } = await import('../api/index.js');
   assert.equal(typeof app, 'function');
+});
+
+test('Express forwards multipart images over the injected ML binding', async (t) => {
+  const previousUrl = process.env.ML_SERVICE_URL;
+  const previousTimeout = process.env.PREDICTION_TIMEOUT_MS;
+  t.after(() => {
+    if (previousUrl === undefined) delete process.env.ML_SERVICE_URL;
+    else process.env.ML_SERVICE_URL = previousUrl;
+    if (previousTimeout === undefined) delete process.env.PREDICTION_TIMEOUT_MS;
+    else process.env.PREDICTION_TIMEOUT_MS = previousTimeout;
+  });
+  const image = await readFile('ml/test-circle.jpeg');
+  let mode = 'success';
+  const ml = express();
+  ml.post('/binding-prefix/predict-shape', multer().single('image'), async (req, res) => {
+    assert.deepEqual(req.file.buffer, image);
+    assert.equal(req.file.mimetype, 'image/jpeg');
+    if (mode === 'timeout') await new Promise((resolve) => setTimeout(resolve, 80));
+    if (mode === 'error') return res.status(500).send('private error');
+    if (mode === 'invalid') return res.send('invalid json');
+    res.json([{ shape: 'circle', confidence: 0.9 }]);
+  });
+  const mlServer = ml.listen(0, '127.0.0.1');
+  await once(mlServer, 'listening');
+  const server = createApp().listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => {
+    for (const instance of [server, mlServer]) { instance.close(); instance.closeAllConnections(); }
+  });
+  process.env.ML_SERVICE_URL = `http://127.0.0.1:${mlServer.address().port}/binding-prefix`;
+  const before = (await readdir(os.tmpdir())).filter((name) => name.startsWith('working-memory-')).sort();
+  for (const [scenario, expected] of [['success', 200], ['error', 502], ['invalid', 502], ['timeout', 504]]) {
+    mode = scenario;
+    process.env.PREDICTION_TIMEOUT_MS = scenario === 'timeout' ? '20' : '60000';
+    const body = new FormData();
+    body.append('image', new Blob([image], { type: 'image/jpeg' }), 'shape.jpeg');
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/working-memory/predict-shape`, {
+      method: 'POST', body, headers: { Origin: 'https://localhost:5173' },
+    });
+    assert.equal(response.status, expected);
+    assert.equal(response.headers.get('access-control-allow-origin'), 'https://localhost:5173');
+    const result = await response.json();
+    if (scenario === 'success') assert.deepEqual(result, { success: true, data: { shape: 'circle', confidence: 0.9, confidenceLevel: 'Very Good' } });
+    assert.doesNotMatch(JSON.stringify(result), /private error|stack/);
+  }
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.deepEqual((await readdir(os.tmpdir())).filter((name) => name.startsWith('working-memory-')).sort(), before);
 });

@@ -9,4 +9,5 @@ __pycache__/
 *.pyc
 .venv/
 .tmp-wheel-audit/
+.tmp-python-service/
 .vercel/

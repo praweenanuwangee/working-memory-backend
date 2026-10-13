@@ -21,7 +21,7 @@ import { runPrediction } from '../services/shapePredictionService.js';
 // CONFIGURATION
 // ============================================================
 
-// Local CLI fallback; Vercel routes prediction directly to its Python Function.
+// Vercel calls the internal ML service binding; local Node-only runs use the CLI.
 // ============================================================
 // USER ID HELPER
 // ============================================================
@@ -254,7 +254,7 @@ export const predictShape = async (req, res) => {
   const imagePath = req.file.path;
 
   try {
-    const predictions = await runPrediction(imagePath);
+    const predictions = await runPrediction(imagePath, req.file);
 
     if (!Array.isArray(predictions)) {
       throw new ApiError(

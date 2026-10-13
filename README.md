@@ -45,154 +45,107 @@ Backend service for the Smart Learn working-memory module.
 - `POST /api/working-memory/progress/reset`
 - `POST /api/working-memory/predict-shape` (multipart field `image`)
 
-## Vercel-only Node and Python deployment
+## Vercel Services deployment
 
-This project uses two native Vercel Functions in one project and one domain:
+`vercel.json` defines two services in one project:
 
-- `api/index.js` exports the existing Express app for game, progress, adaptive,
-  reset and health routes. MongoDB connections are reused. No listener runs here.
-- `api/predict_shape.py` handles `POST /api/working-memory/predict-shape` through
-  the first rewrite in `vercel.json`. Python loads the existing `ml/best (3).pt`
-  with Ultralytics, CPU PyTorch, conf=0.40, imgsz=640 and augment=True.
-- The catch-all rewrite sends other requests to Express, preserving route paths.
+- `app`: root `.`, Express, entrypoint `app.js`. Public through the catch-all
+  rewrite `/(.*)`. Existing `/api/health` and `/api/working-memory/*` paths remain.
+- `ml`: root `ml`, Python/Flask, entrypoint `app:app`. Internal only: no public
+  rewrite targets it. Its `/predict-shape` route accepts multipart field `image`
+  and returns predictions to Express.
+- The calling `app` service declares an `app -> ml` binding, injecting
+  `ML_SERVICE_URL`. Do not set this variable manually. Vercel resolves it in
+  runtime functions, not during builds or routing middleware.
 
-No ML_API_URL or external ML service is needed. Prediction goes directly to Python,
-so no Python executable is assumed inside the Node Function. The Express controller
-still supports local CLI inference through `npm start`; a guard prevents subprocess
-execution on Vercel if routing is misconfigured. `src/server.js` is local only.
-The framework setting is null (Other) so file-based Node and Python Functions are
-built rather than letting the Express preset consume all routes.
+Express receives the public prediction request, saves its upload under
+`os.tmpdir()`, and forwards it to the bound internal service. Python uses temporary
+storage and the existing `best (3).pt` checkpoint. Both temporary files are removed
+on completion or errors. The frontend receives the same
+`{ success: true, data: { shape, confidence, confidenceLevel } }` response.
+The confidence thresholds, shape filtering, conf=0.40, imgsz=640 and augmentation
+remain unchanged. One inference at a time per ML instance bounds memory.
 
-Both functions allow http://localhost:5173, https://localhost:5173, and configured
-CLIENT_URLS (or legacy CLIENT_URL) origins. Python handles OPTIONS itself before
-loading ML dependencies. Required headers are Content-Type, Authorization, x-user-id.
-Uploads use writable temporary files with cleanup and a 4 MB image limit to stay
-under Vercel's 4.5 MB total request-body limit. Oversized platform rejections and
-hard function timeouts may happen before application CORS headers are produced.
+Public CORS and OPTIONS are handled in Express before routes and database access.
+Both localhost origins and configured CLIENT_URLS are allowed. The ML service does
+not need browser CORS because it is internal. Existing MongoDB services and routes
+are preserved. `npm start` remains a Node-only local mode with CLI Python fallback;
+on Vercel a missing binding returns 503 instead of spawning Python inside Node.
+The old `api/` file-based entrypoints are not used in this Services configuration.
 
-### Feasibility and limits
+### Dependencies and limits
 
-The standard Python Function bundle limit is 500 MB uncompressed. The actual
-Linux x86_64 Python 3.12 CPU torch 2.13.0 wheel was downloaded and measured:
-699,419,445 bytes uncompressed (667 MiB), before other dependencies or the
-6,250,858-byte model. This exact pinned stack cannot fit the standard limit.
+The ML service installs its own flat `ml/requirements.txt`, including Flask.
+Linux selects verified CPU torch 2.13.0 and torchvision 0.28.0 wheel URLs for
+CPython 3.12. Non-Linux markers select normal version pins for local development.
+`ml/.python-version` selects 3.12. There are no nested requirements includes or pip
+index directives. Root requirements.txt is retained from the prior configuration;
+it is not the ML service dependency file.
 
-The complete resolved Linux Python 3.12 dependency set was also downloaded:
-1,237,548,422 bytes uncompressed, or 1,243,799,280 bytes including the model.
-That is below the 5 GB beta limit before application/bytecode/runtime overhead,
-with substantial headroom. Transitive dependencies are resolved at build time;
-recheck the actual Vercel bundle instead of treating this wheel audit as a build.
-Headless OpenCV and the corresponding Ultralytics package avoid GUI system
-libraries; the `from ultralytics import YOLO` API and trained weights are unchanged.
+Previously audited Linux YOLO dependencies plus model total approximately 1.24 GB
+uncompressed; Flask adds a small framework dependency set not included in that
+measurement. This exceeds the standard 500 MB Python Function limit and needs
+Large Functions beta with Fluid Compute and Active CPU, plus
+VERCEL_SUPPORT_LARGE_FUNCTIONS=1. Verify project eligibility and the actual final
+bundle below 5 GB. Secure Compute/Static IP configurations do not support that beta.
+Hosted imports, memory consumption, cold starts and production inference remain
+unverified. Both service function durations are 120 seconds. Express aborts waiting
+for ML after PREDICTION_TIMEOUT_MS (default 60000, maximum 110000); Python may
+continue an already running native inference until it completes or the platform
+terminates it. The platform's hard timeout can produce a non-JSON response.
 
-Vercel's Large Functions public beta supports Python bundles up to 5 GB with
-Fluid Compute and Active CPU enabled. Existing projects opt in with
-VERCEL_SUPPORT_LARGE_FUNCTIONS=1. It is unsupported with Secure Compute or Static
-IPs. This is a conditional deployment path; project eligibility and successful
-Linux function build/import/inference must be verified before claiming success.
-Local Windows package size or inference cannot establish Linux runtime success.
+### Environment and deployment
 
-Vercel documents Hobby memory at 2 GB and Pro/Enterprise at up to 4 GB. This
-configuration requests 120 seconds for Python and 60 for Node. Python's default
-soft timeout is 60 seconds. SIGALRM is used only on a Linux main thread; native
-Torch execution can delay it, and worker threads rely on the hard Vercel duration
-limit. A hard timeout may return a platform 504 without the normal JSON/CORS.
-One inference at a time per Python instance bounds memory; concurrent requests to
-that instance receive a retryable 503. Model caching avoids repeated warm loads.
-Peak deployed memory and cold-start time have not been measured.
+Set MONGODB_URI, CLIENT_URLS (or legacy CLIENT_URL), NODE_ENV=production,
+VERCEL_SUPPORT_LARGE_FUNCTIONS=1, and optionally PREDICTION_TIMEOUT_MS=60000 and
+the existing DNS_SERVERS. Leave ML_SERVICE_URL unset: the binding injects it.
+No external ML_API_URL is used. PYTHON_EXECUTABLE is only for Node-only local runs.
 
-Sources: [Python runtime](https://vercel.com/docs/functions/runtimes/python),
-[file-based Python Functions](https://vercel.com/docs/functions/runtimes/python/api-directory),
-[function limits and Large Functions](https://vercel.com/docs/functions/limitations).
+Push the service configuration, `ml/app.py`, flat ML requirements and model.
+Use the repository as the Vercel project root, clear old build/output overrides,
+and confirm Services and Large Functions support. Deploy a Preview first and
+inspect both service builds, the Python bundle size, model loading, public CORS,
+real prediction, MongoDB health and test-user progress/adaptive/reset flows before
+promoting. Service settings, including functions and framework, live inside each
+service object; only public routing remains at the top level.
 
-### Required configuration
+### Local tests
 
-Set in the Vercel project's Production and Preview environments:
+With a current Vercel CLI and Python 3.12 available, run both services together:
 
-- `MONGODB_URI`: existing MongoDB connection string.
-- `CLIENT_URLS`: comma-separated exact production frontend origins (localhost
-  origins are explicitly allowed). CLIENT_URL remains a single-origin fallback.
-- `NODE_ENV=production`.
-- `VERCEL_SUPPORT_LARGE_FUNCTIONS=1`: required for the measured dependency stack.
-- Optional `PREDICTION_TIMEOUT_MS=60000`: positive integer up to 110000 for Python.
-- Optional `DNS_SERVERS`: existing MongoDB DNS override, unchanged.
+```powershell
+vercel dev
+# Or without authenticating with Vercel Cloud:
+vercel dev -L
+```
 
-Do not set ML_API_URL or PYTHON_EXECUTABLE in Vercel. Python 3.12 is selected in
-.python-version. Root requirements.txt is flat: it uses PEP 508 direct references
-to the verified Linux x86_64 CPython 3.12 CPU wheels for torch 2.13.0 and
-torchvision 0.28.0, followed by explicit Ultralytics/headless OpenCV/Pillow pins.
-It contains no nested `-r` includes or pip index directives, avoiding Vercel's
-reported included-file parsing failure. These wheel URLs are Linux/Python 3.12
-specific; use ml/requirements.txt for local Windows installation instead.
-Successful parsing is separate from Linux imports, bundle limits and inference.
-The model is explicitly included; Node dependencies and development files are
-excluded from Python. Vercel does not use a Dockerfile for this deployment.
+Vercel injects the binding automatically in either mode. Do not manually set it.
+Request the public dev server (default port 3000):
 
-### Local verification
+```powershell
+curl.exe -i -X OPTIONS http://localhost:3000/api/working-memory/predict-shape -H "Origin: https://localhost:5173" -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: Content-Type,Authorization,x-user-id"
+curl.exe -i http://localhost:3000/api/working-memory/predict-shape -H "Origin: https://localhost:5173" -F "image=@ml/test-circle.jpeg"
+```
+
+Independent checks with Python dependencies installed:
 
 ```powershell
 npm.cmd run check
 npm.cmd test
-python -m py_compile api/predict_shape.py ml/predict.py
-python -m unittest discover -s test -p test_python_function.py
-# Include actual model inference (requires installed Python ML dependencies):
+python -m py_compile ml/app.py ml/predict.py
 $env:RUN_ML_TESTS='1'
-python -m unittest discover -s test -p test_python_function.py
-# Python HTTP endpoint for manual testing:
-python api/predict_shape.py
+python -m unittest discover -s test -p test_ml_service.py
 ```
 
-From another terminal:
+Node tests simulate an injected binding to validate multipart forwarding, safe
+upstream errors/timeouts, CORS and cleanup. Python tests validate the actual Flask
+service and optionally run the trained model. Those checks do not verify Vercel's
+binding generation or deployed builds. Keep the frontend URL and paths unchanged.
 
-```powershell
-curl.exe -i -X OPTIONS http://127.0.0.1:8000/api/working-memory/predict-shape -H "Origin: https://localhost:5173" -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: Content-Type,Authorization,x-user-id"
-curl.exe -i http://127.0.0.1:8000/api/working-memory/predict-shape -H "Origin: https://localhost:5173" -F "image=@ml/test-circle.jpeg"
-```
-
-The Python tests check multipart parsing, CORS, thresholds, cleanup and errors.
-RUN_ML_TESTS=1 also invokes the real model. Node tests verify the existing Express
-upload and response behavior; they do not validate Vercel rewrites or MongoDB
-persistence. `npm start` remains available for local Node + CLI Python operation.
-For the full Vercel routing locally use a current CLI and `vercel dev`.
-
-To audit the Linux Python bundle without installing it into a Windows interpreter:
-
-```powershell
-python -m pip download --only-binary=:all: --platform manylinux_2_28_x86_64 --platform manylinux2014_x86_64 --platform manylinux_2_17_x86_64 --python-version 312 --implementation cp --abi cp312 --abi abi3 --abi none -r requirements.txt --dest .tmp-wheel-audit
-python scripts/measure-python-wheels.py .tmp-wheel-audit
-```
-
-This measures wheel contents, not the final Vercel bundle. Include application,
-model, generated bytecode and runtime overhead when inspecting build output.
-
-### Vercel deployment and verification
-
-1. Push the changes, including the trained model, requirements.txt, api directory
-   and vercel.json, to the repository.
-2. Use this repository as the Vercel project root; set Framework Preset to Other
-   and Node 22.x. Clear old build/output-directory and Docker/Express overrides.
-3. Enable Fluid Compute with Active CPU, confirm Large Functions beta is available
-   for the project, and set the environment variables above.
-4. Deploy a Preview first. Inspect both Python and Node function build logs.
-   Confirm dependency resolution, Python bundle size below 5 GB, model inclusion,
-   successful CPU Torch/OpenCV imports, and both functions being generated.
-5. Test the Preview URL, accounting for Vercel Deployment Protection if enabled.
-   OPTIONS must return 204 with the requesting allowed origin; prediction must
-   return 200 with shape/confidence/confidenceLevel; health must show MongoDB connected.
-6. Exercise progress, completion, adaptive learning and reset using a test user.
-   Check runtime memory, cold-start duration and error logs before promoting.
-7. Promote the verified deployment, then repeat checks on the production domain.
-
-```powershell
-curl.exe -i -X OPTIONS https://working-memory-backend.vercel.app/api/working-memory/predict-shape -H "Origin: https://localhost:5173" -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: Content-Type,Authorization,x-user-id"
-curl.exe -i https://working-memory-backend.vercel.app/api/working-memory/predict-shape -H "Origin: https://localhost:5173" -F "image=@ml/test-circle.jpeg"
-curl.exe -i https://working-memory-backend.vercel.app/api/health
-```
-
-Keep the frontend backend domain and endpoint unchanged. Set the actual deployed
-frontend origin in CLIENT_URLS. Keep multipart field image and allow the browser
-to set its boundary. Use a frontend timeout longer than the server inference budget.
-No deployed endpoint or account configuration has been verified by these local tests.
+References: [Services](https://vercel.com/docs/services),
+[bindings](https://vercel.com/docs/services/bindings),
+[configuration](https://vercel.com/docs/services/config-reference),
+[function limits](https://vercel.com/docs/functions/limitations).
 
 ## Example Body
 

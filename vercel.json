@@ -1,19 +1,35 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": null,
-  "functions": {
-    "api/index.js": {
-      "maxDuration": 60,
-      "excludeFiles": "{ml/**,test/**,.tmp-wheel-audit/**}"
+  "services": {
+    "app": {
+      "root": ".",
+      "framework": "express",
+      "entrypoint": "app.js",
+      "bindings": [
+        { "type": "service", "service": "ml", "format": "url", "env": "ML_SERVICE_URL" }
+      ],
+      "functions": {
+        "app.js": {
+          "maxDuration": 120,
+          "excludeFiles": "{ml/**,api/**,test/**,.tmp-wheel-audit/**,.tmp-python-service/**}"
+        }
+      }
     },
-    "api/predict_shape.py": {
-      "maxDuration": 120,
-      "includeFiles": "ml/**",
-      "excludeFiles": "{node_modules/**,src/**,test/**,scripts/**,uploads/**,.tmp-wheel-audit/**,.git/**,.env*,ml/test-circle.jpeg,**/__pycache__/**}"
+    "ml": {
+      "root": "ml",
+      "runtime": "python",
+      "framework": "flask",
+      "entrypoint": "app:app",
+      "functions": {
+        "app.py": {
+          "maxDuration": 120,
+          "includeFiles": "best (3).pt",
+          "excludeFiles": "{test-circle.jpeg,**/__pycache__/**}"
+        }
+      }
     }
   },
   "rewrites": [
-    { "source": "/api/working-memory/predict-shape", "destination": "/api/predict_shape" },
-    { "source": "/(.*)", "destination": "/api/index" }
+    { "source": "/(.*)", "destination": { "service": "app" } }
   ]
 }

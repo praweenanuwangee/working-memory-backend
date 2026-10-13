@@ -1,14 +1,16 @@
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { ApiError } from '../utils/ApiError.js';
+import { readFile } from 'node:fs/promises';
 
 const scriptPath = fileURLToPath(new URL('../../ml/predict.py', import.meta.url));
 let activePrediction = false;
 
 // Local CLI only: a single CPU inference at a time bounds memory use.
-export const runPrediction = (imagePath) => {
+export const runPrediction = (imagePath, image = {}) => {
+  if (process.env.ML_SERVICE_URL) return runBoundPrediction(imagePath, image);
   if (process.env.VERCEL === '1') {
-    throw new ApiError(503, 'Prediction must be routed to the Python Function');
+    throw new ApiError(503, 'Internal ML service binding is unavailable');
   }
   if (activePrediction) throw new ApiError(503, 'Shape prediction is busy; please try again');
   const timeout = Number(process.env.PREDICTION_TIMEOUT_MS || 60000);
@@ -52,4 +54,38 @@ export const runPrediction = (imagePath) => {
       catch { reject(new ApiError(502, 'Invalid prediction output')); }
     });
   });
+};
+
+const runBoundPrediction = async (imagePath, image) => {
+  const timeout = Number(process.env.PREDICTION_TIMEOUT_MS || 60000);
+  if (!Number.isInteger(timeout) || timeout <= 0 || timeout > 110000) {
+    throw new ApiError(503, 'Shape prediction timeout is not configured correctly');
+  }
+  let url;
+  try {
+    const base = process.env.ML_SERVICE_URL;
+    url = new URL('predict-shape', base.endsWith('/') ? base : `${base}/`);
+  } catch {
+    throw new ApiError(503, 'Internal ML service binding is invalid');
+  }
+  const form = new FormData();
+  form.append('image', new Blob([await readFile(imagePath)], {
+    type: image.mimetype || 'image/jpeg',
+  }), image.originalname || 'shape.jpg');
+  try {
+    const response = await fetch(url, {
+      method: 'POST', body: form, signal: AbortSignal.timeout(timeout),
+    });
+    if (!response.ok) {
+      await response.body?.cancel();
+      const status = [400, 413, 503, 504].includes(response.status) ? response.status : 502;
+      throw new ApiError(status, status === 400 ? 'Invalid image data' : 'Shape prediction service failed');
+    }
+    return await response.json();
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if (error.name === 'TimeoutError') throw new ApiError(504, 'Shape prediction timed out');
+    if (error instanceof SyntaxError) throw new ApiError(502, 'Invalid prediction output');
+    throw new ApiError(503, 'Internal shape prediction service unavailable');
+  }
 };

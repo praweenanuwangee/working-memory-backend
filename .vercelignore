@@ -1,6 +1,7 @@
 .env
 .env.*
 .tmp-wheel-audit/
+.tmp-python-service/
 uploads/
 test/
 **/__pycache__/
