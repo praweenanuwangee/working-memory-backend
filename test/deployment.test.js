@@ -38,13 +38,13 @@ test('both Working Memory prefixes share routes and database middleware', async 
 });
 
 test('CORS, real Python image prediction, uploads and subprocess failures', async (t) => {
-  const app = createApp({ clientUrls: ['https://frontend.example'] });
+  const app = createApp({ clientUrls: ['https://frontend.example', 'https://r26-it-114-jflg.vercel.app'] });
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
   t.after(() => new Promise((resolve) => { server.close(resolve); server.closeAllConnections(); }));
   const url = `http://127.0.0.1:${server.address().port}`;
   const endpoint = `${url}/api/working-memory/predict-shape`;
-  for (const origin of ['http://localhost:5173', 'https://localhost:5173', 'https://frontend.example']) {
+  for (const origin of ['http://localhost:5173', 'https://localhost:5173', 'https://frontend.example', 'https://r26-it-114-jflg.vercel.app']) {
     const response = await fetch(endpoint, { method: 'OPTIONS', headers: {
       Origin: origin, 'Access-Control-Request-Method': 'POST',
       'Access-Control-Request-Headers': 'Content-Type,Authorization,x-user-id',
@@ -56,16 +56,30 @@ test('CORS, real Python image prediction, uploads and subprocess failures', asyn
   const blocked = await fetch(endpoint, { method: 'OPTIONS', headers: { Origin: 'https://untrusted.example' } });
   assert.equal(blocked.status, 403);
   assert.equal(blocked.headers.get('access-control-allow-origin'), null);
+  const productionOrigin = 'https://r26-it-114-jflg.vercel.app';
+  const productionPreflight = await fetch(endpoint, { method: 'OPTIONS', headers: {
+    Origin: productionOrigin,
+    'Access-Control-Request-Method': 'POST',
+    'Access-Control-Request-Headers': 'Content-Type,Authorization,x-user-id',
+  } });
+  assert.equal(productionPreflight.status, 204);
+  assert.equal(productionPreflight.headers.get('access-control-allow-origin'), productionOrigin);
+  assert.match(productionPreflight.headers.get('access-control-allow-methods'), /POST/);
+  assert.match(productionPreflight.headers.get('access-control-allow-headers'), /content-type/i);
+  assert.match(productionPreflight.headers.get('access-control-allow-headers'), /authorization/i);
+  const productionUpload = await fetch(endpoint, { method: 'POST', headers: { Origin: productionOrigin } });
+  assert.equal(productionUpload.status, 400);
+  assert.equal(productionUpload.headers.get('access-control-allow-origin'), productionOrigin);
   assert.equal((await fetch(`${url}/api/working-memory/games`)).status, 200);
   const unprefixed = await fetch(`${url}/predict-shape`, { method: 'POST' });
   assert.equal(unprefixed.status, 404);
   assert.equal((await unprefixed.json()).message, 'Route not found: POST /predict-shape');
   assert.equal((await fetch(endpoint, { method: 'POST' })).status, 400);
   const image = await readFile('ml/test-circle.jpeg');
-  const upload = async (type = 'image/jpeg', bytes = image, field = 'image') => {
+  const upload = async (type = 'image/jpeg', bytes = image, field = 'image', origin = 'https://localhost:5173') => {
     const body = new FormData();
     body.append(field, new Blob([bytes], { type }), 'shape.jpeg');
-    return fetch(endpoint, { method: 'POST', body, headers: { Origin: 'https://localhost:5173' } });
+    return fetch(endpoint, { method: 'POST', body, headers: { Origin: origin } });
   };
   const before = (await readdir(os.tmpdir())).filter((name) => name.startsWith('working-memory-')).sort();
   const originalVercel = process.env.VERCEL;
@@ -74,10 +88,11 @@ test('CORS, real Python image prediction, uploads and subprocess failures', asyn
   if (originalVercel === undefined) delete process.env.VERCEL;
   else process.env.VERCEL = originalVercel;
   if (process.env.RUN_ML_TESTS === '1') {
-    const response = await upload();
+    const response = await upload('image/jpeg', image, 'image', 'https://r26-it-114-jflg.vercel.app');
     assert.equal(response.status, 200, await response.clone().text());
     const { success, data } = await response.json();
     assert.equal(success, true);
+    assert.equal(response.headers.get('access-control-allow-origin'), 'https://r26-it-114-jflg.vercel.app');
     assert.equal(data.shape, 'circle');
     assert.ok(data.confidence >= 0.4 && data.confidence <= 1);
     assert.equal(data.confidenceLevel, 'Very Good');
@@ -164,8 +179,10 @@ test('Express forwards multipart images over the injected ML binding', async (t)
     assert.equal(req.file.mimetype, 'image/jpeg');
     if (mode === 'timeout') await new Promise((resolve) => setTimeout(resolve, 80));
     if (mode === 'error') return res.status(500).send('private error');
+    if (mode === 'missing') return res.status(404).send('private route error');
+    if (mode === 'bad-image') return res.status(400).send('invalid image');
     if (mode === 'invalid') return res.send('invalid json');
-    res.json([{ shape: 'circle', confidence: 0.9 }]);
+    res.json([{ shape: ['square', 'triangle'].includes(mode) ? mode : 'circle', confidence: 0.9 }]);
   });
   const mlServer = ml.listen(0, '127.0.0.1');
   await once(mlServer, 'listening');
@@ -176,7 +193,7 @@ test('Express forwards multipart images over the injected ML binding', async (t)
   });
   process.env.ML_SERVICE_URL = `http://127.0.0.1:${mlServer.address().port}/binding-prefix`;
   const before = (await readdir(os.tmpdir())).filter((name) => name.startsWith('working-memory-')).sort();
-  for (const [scenario, expected] of [['success', 200], ['error', 502], ['invalid', 502], ['timeout', 504]]) {
+  for (const [scenario, expected] of [['success', 200], ['square', 200], ['triangle', 200], ['missing', 502], ['bad-image', 400], ['error', 502], ['invalid', 502], ['timeout', 504]]) {
     mode = scenario;
     process.env.PREDICTION_TIMEOUT_MS = scenario === 'timeout' ? '20' : '60000';
     const body = new FormData();
@@ -187,7 +204,7 @@ test('Express forwards multipart images over the injected ML binding', async (t)
     assert.equal(response.status, expected);
     assert.equal(response.headers.get('access-control-allow-origin'), 'https://localhost:5173');
     const result = await response.json();
-    if (scenario === 'success') assert.deepEqual(result, { success: true, data: { shape: 'circle', confidence: 0.9, confidenceLevel: 'Very Good' } });
+    if (expected === 200) assert.deepEqual(result, { success: true, data: { shape: scenario === 'success' ? 'circle' : scenario, confidence: 0.9, confidenceLevel: 'Very Good' } });
     assert.doesNotMatch(JSON.stringify(result), /private error|stack/);
   }
   await new Promise((resolve) => setTimeout(resolve, 50));

@@ -26,6 +26,7 @@ export const createApp = ({ clientUrls = [], databaseMiddleware } = {}) => {
 
   const allowedOrigins = [
     ...configuredOrigins,
+    'https://r26-it-114-jflg.vercel.app',
     'http://localhost:5173',
     'https://localhost:5173',
   ]

@@ -229,3 +229,25 @@ References: [Services](https://vercel.com/docs/services),
 	}
 }
 ```
+
+
+### Shape prediction deployment configuration
+
+The frontend project at https://r26-it-114-jflg.vercel.app must be rebuilt with
+`VITE_WORKINGMEMORY_API_URL=https://working-memory-backend-f7qu.vercel.app/api/working-memory`.
+The frontend resolver also supports `VITE_WORKING_MEMORY_API_URL` with a backend origin.
+The public request is `POST /api/working-memory/predict-shape`, using one multipart
+file named `image`; the browser supplies the multipart Content-Type boundary.
+
+In the backend Vercel project's Production environment, include
+`https://r26-it-114-jflg.vercel.app` in `CLIENT_URLS`, retaining any other authorized
+origins. `CLIENT_URLS` takes precedence over `CLIENT_URL`. Redeploy the backend
+following an environment change, and redeploy the frontend following its rebuild.
+Keep the existing Express-to-Flask `ML_SERVICE_URL` service binding and ONNX model.
+Do not change MongoDB settings or database records for this fix.
+
+To distinguish routing from CORS problems, an empty POST at the public backend
+endpoint should return 400 (Image file is required). An OPTIONS request with
+`Origin: https://r26-it-114-jflg.vercel.app` should return 204 with a matching
+`Access-Control-Allow-Origin`; 403 means the frontend origin is not allowed.
+The frontend domain does not host the Working Memory API.
